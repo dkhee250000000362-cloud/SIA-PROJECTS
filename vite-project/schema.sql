@@ -1,0 +1,31 @@
+CREATE DATABASE IF NOT EXISTS boarding_house
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE boarding_house;
+
+CREATE TABLE IF NOT EXISTS workspace_state (
+  id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+  workspace_data JSON NOT NULL,
+  version BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS app_users (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  role ENUM('admin', 'tenant') NOT NULL,
+  tenant_id VARCHAR(64) NULL,
+  name VARCHAR(160) NOT NULL,
+  email VARCHAR(254) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS app_sessions (
+  token_hash CHAR(64) NOT NULL PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_app_sessions_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE,
+  INDEX idx_app_sessions_expires (expires_at)
+) ENGINE=InnoDB;
