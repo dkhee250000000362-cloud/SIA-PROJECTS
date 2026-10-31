@@ -2,7 +2,25 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import harborApi from './api/harborApi'
 
-const EMPTY_WORKSPACE = { rooms: [], tenants: [], bills: [], tickets: [], landlord: null }
+const EMPTY_WORKSPACE = {
+  rooms: [], tenants: [], bills: [], tickets: [], properties: [], bookingRequests: [], contracts: [], extensionRequests: [], auditLog: [], landlord: null,
+}
+const normalizeWorkspace = (workspace) => {
+  const saved = workspace && typeof workspace === 'object' ? workspace : {}
+  return {
+    ...EMPTY_WORKSPACE,
+    ...saved,
+    rooms: Array.isArray(saved.rooms) ? saved.rooms : [],
+    tenants: Array.isArray(saved.tenants) ? saved.tenants : [],
+    bills: Array.isArray(saved.bills) ? saved.bills : [],
+    tickets: Array.isArray(saved.tickets) ? saved.tickets : [],
+    properties: Array.isArray(saved.properties) ? saved.properties : [],
+    bookingRequests: Array.isArray(saved.bookingRequests) ? saved.bookingRequests : [],
+    contracts: Array.isArray(saved.contracts) ? saved.contracts : [],
+    extensionRequests: Array.isArray(saved.extensionRequests) ? saved.extensionRequests : [],
+    auditLog: Array.isArray(saved.auditLog) ? saved.auditLog : [],
+  }
+}
 const Ctx = createContext(null)
 export const useStore = () => useContext(Ctx)
 
@@ -90,7 +108,7 @@ export function StoreProvider({ children }) {
     harborApi.getSession()
       .then((result) => {
         if (!active) return
-        setData(result.workspace)
+        setData(normalizeWorkspace(result.workspace))
         setSession(result.session)
         setVersion(result.version)
         setApiError('')
@@ -107,7 +125,7 @@ export function StoreProvider({ children }) {
 
   const api = useMemo(() => {
     const acceptAuth = (result) => {
-      setData(result.workspace)
+      setData(normalizeWorkspace(result.workspace))
       setSession(result.session)
       setVersion(result.version)
       setApiError('')
@@ -127,7 +145,7 @@ export function StoreProvider({ children }) {
       setApiError('')
       try {
         const result = await harborApi.mutate(version, { type, payload })
-        setData(result.workspace)
+        setData(normalizeWorkspace(result.workspace))
         setVersion(result.version)
         return result.result || {}
       } catch (error) {
@@ -135,7 +153,7 @@ export function StoreProvider({ children }) {
         if (error.status === 409) {
           try {
             const current = await harborApi.getSession()
-            setData(current.workspace)
+            setData(normalizeWorkspace(current.workspace))
             setSession(current.session)
             setVersion(current.version)
           } catch (refreshError) {
@@ -148,15 +166,15 @@ export function StoreProvider({ children }) {
     }
 
     return {
-      loginAdmin: (email, password) => authenticate(() => harborApi.login('admin', email, password)),
-      loginTenant: (email, password) => authenticate(() => harborApi.login('tenant', email, password)),
+      loginAdmin: (email, password, rememberMe) => authenticate(() => harborApi.login('admin', email, password, rememberMe)),
+      loginTenant: (email, password, rememberMe) => authenticate(() => harborApi.login('tenant', email, password, rememberMe)),
       createAdminAccount: (account) => authenticate(() => harborApi.registerAdmin(account)),
       createTenantAccount: (account) => authenticate(() => harborApi.registerTenant(account)),
       async logout() {
         setApiError('')
         try {
           const result = await harborApi.logout()
-          setData(result.workspace)
+          setData(normalizeWorkspace(result.workspace))
           setSession(null)
           setVersion(result.version)
         } catch (error) {
@@ -179,8 +197,23 @@ export function StoreProvider({ children }) {
       generateBills: (payload) => mutate('billing.generate', payload),
       setBillStatus: (id, status) => mutate('billing.setStatus', { id, status }),
       attachProof: (id, proof) => mutate('billing.attachProof', { id, proof }),
+      submitPayment: (id, method, reference, proof) => mutate('billing.submitPayment', { id, method, reference, proof }),
       addTicket: (ticket) => mutate('ticket.create', ticket),
       setTicketStatus: (id, status) => mutate('ticket.setStatus', { id, status }),
+      respondToTicket: (id, response) => mutate('ticket.respond', { id, response }),
+      addProperty: (property) => mutate('property.create', property),
+      updateProperty: (id, change) => mutate('property.update', { id, change }),
+      deleteProperty: (id) => mutate('property.delete', { id }),
+      inquireProperty: (propertyId, inquiry) => mutate('property.inquiry', { propertyId, ...inquiry }),
+      updateBooking: (id, status, response) => mutate('booking.update', { id, status, response }),
+      createContract: (inquiryId) => mutate('contract.create', { inquiryId }),
+      updateContract: (id, change) => mutate('contract.update', { id, change }),
+      sendContract: (id, change) => mutate('contract.send', { id, change }),
+      setContractStatus: (id, status) => mutate('contract.setStatus', { id, status }),
+      decideContract: (id, decision, signature) => mutate('contract.decide', { id, decision, signature }),
+      requestExtension: (contractId, additionalDays, reason) => mutate('extension.create', { contractId, additionalDays, reason }),
+      reviewExtension: (id, status, additionalCost, notes) => mutate('extension.review', { id, status, additionalCost, notes }),
+      cancelExtension: (id) => mutate('extension.cancel', { id }),
       dismissApiError: () => setApiError(''),
     }
   }, [version])

@@ -29,15 +29,19 @@ try {
       JSON_LENGTH(workspace_data, ?) AS rooms,
       JSON_LENGTH(workspace_data, ?) AS tenants,
       JSON_LENGTH(workspace_data, ?) AS bills,
-      JSON_LENGTH(workspace_data, ?) AS tickets
+      JSON_LENGTH(workspace_data, ?) AS tickets,
+      JSON_LENGTH(workspace_data, ?) AS properties,
+      JSON_LENGTH(workspace_data, ?) AS bookingRequests,
+      JSON_LENGTH(workspace_data, ?) AS auditLog
      FROM workspace_state WHERE id = ?`,
-    ['$.rooms', '$.tenants', '$.bills', '$.tickets', 1],
+    ['$.rooms', '$.tenants', '$.bills', '$.tickets', '$.properties', '$.bookingRequests', '$.auditLog', 1],
   )
   if (!rows.length) throw new Error('workspace_state has no workspace row.')
   const workspace = rows[0]
   console.log(`Workspace last updated: ${workspace.updated_at}`)
   console.log(`Workspace version: ${workspace.version}`)
   console.log(`Rooms: ${workspace.rooms}; boarders: ${workspace.tenants}; bills: ${workspace.bills}; repair requests: ${workspace.tickets}`)
+  console.log(`Listings: ${workspace.properties ?? 0}; booking inquiries: ${workspace.bookingRequests ?? 0}; audit entries: ${workspace.auditLog ?? 0}`)
 } finally {
   await connection.end()
 }

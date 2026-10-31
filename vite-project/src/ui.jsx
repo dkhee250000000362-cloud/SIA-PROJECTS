@@ -43,7 +43,7 @@ export function Field({ label, children, hint }) {
 }
 
 /** Button that opens the file picker and returns a processed file via onFile. */
-export function UploadButton({ label, onFile, className = 'btn' }) {
+export function UploadButton({ label, onFile, className = 'btn', accept = 'image/*,application/pdf', validateFile }) {
   const ref = useRef(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -55,6 +55,7 @@ export function UploadButton({ label, onFile, className = 'btn' }) {
     setError('')
     setBusy(true)
     try {
+      validateFile?.(file)
       await onFile(await readFile(file))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
@@ -65,7 +66,7 @@ export function UploadButton({ label, onFile, className = 'btn' }) {
 
   return (
     <span className="upload">
-      <input ref={ref} type="file" accept="image/*,application/pdf" onChange={pick} hidden />
+      <input ref={ref} type="file" accept={accept} onChange={pick} hidden />
       <button type="button" className={className} disabled={busy} onClick={() => ref.current?.click()}>
         {busy ? 'Uploading…' : label}
       </button>

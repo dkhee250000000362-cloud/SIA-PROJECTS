@@ -5,13 +5,15 @@ import { Field } from '../ui'
 export default function Login() {
   const store = useStore()
   const [role, setRole] = useState('admin')
-  const [mode, setMode] = useState('login')
+  const [mode, setMode] = useState(() => store.landlord ? 'login' : 'create')
   const [name, setName] = useState('')
   const [propertyName, setPropertyName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordVisible, setPasswordVisible] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -40,8 +42,8 @@ export default function Login() {
     setSubmitting(true)
     if (mode === 'login') {
       const message = role === 'admin'
-        ? await store.loginAdmin(email, password)
-        : await store.loginTenant(email, password)
+        ? await store.loginAdmin(email, password, rememberMe)
+        : await store.loginTenant(email, password, rememberMe)
       setError(message)
       setSubmitting(false)
       return
@@ -106,7 +108,7 @@ export default function Login() {
               Landlord
             </button>
             <button type="button" className={role === 'tenant' ? 'active' : ''} onClick={() => switchRole('tenant')}>
-              Boarder
+              Tenant / Boarder
             </button>
           </div>
 
@@ -137,25 +139,36 @@ export default function Login() {
               />
             </Field>
             <Field label="Password" hint={creating ? 'Use at least 8 characters.' : undefined}>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete={creating ? 'new-password' : 'current-password'}
-                minLength={creating ? 8 : undefined}
-                required
-              />
-            </Field>
-            {creating && (
-              <Field label="Confirm password">
+              <span className="password-wrap">
                 <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={8}
+                  type={passwordVisible ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete={creating ? 'new-password' : 'current-password'}
+                  minLength={creating ? 8 : undefined}
                   required
                 />
+                <button type="button" className="password-toggle" onClick={() => setPasswordVisible((visible) => !visible)} aria-label={passwordVisible ? 'Hide password' : 'Show password'}>
+                  {passwordVisible ? 'Hide' : 'Show'}
+                </button>
+              </span>
+            </Field>
+            {!creating && <label className="remember-option"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /> Keep me signed in for 7 days</label>}
+            {creating && (
+              <Field label="Confirm password">
+                <span className="password-wrap">
+                  <input
+                    type={passwordVisible ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                  />
+                  <button type="button" className="password-toggle" onClick={() => setPasswordVisible((visible) => !visible)} aria-label={passwordVisible ? 'Hide password' : 'Show password'}>
+                    {passwordVisible ? 'Hide' : 'Show'}
+                  </button>
+                </span>
               </Field>
             )}
             {error && <p className="error auth-error" role="alert">{error}</p>}

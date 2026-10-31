@@ -4,9 +4,33 @@ import {
 } from '../store'
 import { Badge, Modal, Field, UploadButton, FileView, Empty } from '../ui'
 import TenantExcelImport from './TenantExcelImport'
+import { LandlordProperties } from './PropertyManagement'
+import { AccountSettings, AuditReports, Transactions } from './ManagementPages'
+import { LandlordContracts, LandlordExtensions } from './ContractManagement'
 
-const NAV = ['Overview', 'Rooms', 'Tenants', 'Billing', 'Maintenance']
-const CATEGORY_ICON = { Plumbing: '🚰', Electric: '💡', 'Wi-Fi': '📶', Aircon: '❄️', Other: '🛠️' }
+const NAV = [
+  ['Overview', '⌂'], ['Listings', '▤'], ['Rooms', '▦'], ['Tenants', '♙'],
+  ['Contracts', '▧'], ['Extension Requests', '↗'],
+  ['Transactions', '₱'], ['Billing', '◷'], ['Audit Reports', '≡'], ['Maintenance', '⚒'], ['Settings', '⚙'],
+]
+const CATEGORY_ICON = {
+  Plumbing: '🚰', Electrical: '💡', 'Wi-Fi / Internet': '📶', 'Air conditioning': '❄️',
+  Furniture: '🪑', 'Structural damage': '🏚️', Cleanliness: '🧹',
+  'Safety concern': '⚠️', Other: '🛠️',
+}
+const PAGE_DESCRIPTIONS = {
+  Overview: 'Your boarding house at a glance.',
+  Listings: 'Manage property details, publishing, and tenant inquiries.',
+  Rooms: 'Manage room availability and resident assignments.',
+  Tenants: 'Resident records, contacts, and rental details.',
+  Contracts: 'Prepare rental agreements and review tenant acceptance.',
+  'Extension Requests': 'Review and approve additional rental days.',
+  Transactions: 'Review rent payments and submitted proofs.',
+  Billing: 'Create monthly bills and review outstanding balances.',
+  'Audit Reports': 'Track and export recent workspace activity.',
+  Maintenance: 'Respond to tenant reports and keep repairs moving.',
+  Settings: 'Manage your landlord account and workspace information.',
+}
 
 export default function AdminDashboard() {
   const store = useStore()
@@ -21,28 +45,39 @@ export default function AdminDashboard() {
           <span>affinity<small>{store.landlord?.propertyName || 'House management'}</small></span>
         </div>
         <nav>
-          {NAV.map((n) => (
-            <button key={n} className={tab === n ? 'on' : ''} onClick={() => setTab(n)}>
-              {n}
-              {n === 'Maintenance' && openTickets > 0 && <span className="count">{openTickets}</span>}
+          {NAV.map(([name, icon]) => (
+            <button key={name} className={tab === name ? 'on' : ''} aria-current={tab === name ? 'page' : undefined} onClick={() => setTab(name)}>
+              <span className="nav-icon" aria-hidden="true">{icon}</span>
+              <span>{name}</span>
+              {name === 'Maintenance' && openTickets > 0 && <span className="count">{openTickets}</span>}
             </button>
           ))}
         </nav>
         <div className="side-foot">
-          <small>Signed in as {store.landlord?.name || 'landlord'}</small>
-          <button className="btn btn-ghost-light" onClick={store.logout}>Sign out</button>
+          <div className="side-user">
+            <span className="avatar">{(store.landlord?.name || 'L').slice(0, 1).toUpperCase()}</span>
+            <span><strong>{store.landlord?.name || 'Landlord'}</strong><small>Property owner</small></span>
+          </div>
+          <button className="btn btn-ghost-light" onClick={store.logout}><span aria-hidden="true">↗</span> Sign out</button>
         </div>
       </aside>
 
       <main className="main">
         <header className="page-head">
-          <h2>{tab}</h2>
+          <div><span className="eyebrow">AFFINITY · LANDLORD WORKSPACE</span><h2>{tab === 'Overview' ? `Welcome back, ${(store.landlord?.name || 'Landlord').split(' ')[0]}` : tab}</h2><p>{PAGE_DESCRIPTIONS[tab]}</p></div>
+          <time>{new Date().toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })}</time>
         </header>
         {tab === 'Overview' && <Overview goTo={setTab} />}
+        {tab === 'Listings' && <LandlordProperties />}
         {tab === 'Rooms' && <Rooms />}
         {tab === 'Tenants' && <Tenants />}
+        {tab === 'Contracts' && <LandlordContracts />}
+        {tab === 'Extension Requests' && <LandlordExtensions />}
+        {tab === 'Transactions' && <Transactions />}
         {tab === 'Billing' && <Billing />}
+        {tab === 'Audit Reports' && <AuditReports />}
         {tab === 'Maintenance' && <Maintenance />}
+        {tab === 'Settings' && <AccountSettings />}
       </main>
     </div>
   )
@@ -51,40 +86,33 @@ export default function AdminDashboard() {
 /* ------------------------------------------------------------ Overview */
 
 function Overview({ goTo }) {
-  const { rooms, tenants, bills, tickets, setBillStatus } = useStore()
+  const { rooms, tenants, bills, tickets, properties = [], setBillStatus } = useStore()
   const [proof, setProof] = useState(null)
   const live = rooms.filter((r) => !r.archived)
   const stats = live.map((r) => roomStats(r, tenants))
   const totalBeds = live.reduce((s, r) => s + r.capacity, 0)
   const filledBeds = stats.reduce((s, x) => s + x.filled, 0)
+  const availableBeds = stats.reduce((s, x) => s + x.beds.filter((bed) => !bed.tenant && !bed.cleaning).length, 0)
   const rate = totalBeds ? Math.round((filledBeds / totalBeds) * 100) : 0
   const revenue = bills.filter((b) => b.month === thisMonth() && b.status === 'Paid').reduce((s, b) => s + billTotal(b), 0)
   const pending = bills.filter((b) => b.status !== 'Paid').length
   const open = tickets.filter((t) => t.status !== 'Resolved')
+  const recentBills = [...bills].sort((a, b) => String(b.submittedAt || b.paidAt || b.createdAt || b.month).localeCompare(
+    String(a.submittedAt || a.paidAt || a.createdAt || a.month),
+  )).slice(0, 5)
   const review = bills.filter((b) => b.proof && b.status !== 'Paid')
   const nameOf = (id) => tenants.find((t) => t.id === id)?.name || 'Unknown'
 
   return (
     <>
       <div className="stats">
-        <div className="stat">
-          <small>Collected in {monthLabel(thisMonth())}</small>
-          <strong>{money(revenue)}</strong>
-        </div>
-        <div className="stat">
-          <small>Beds occupied</small>
-          <strong>{rate}%</strong>
-          <span>{filledBeds} of {totalBeds} beds</span>
-        </div>
-        <div className="stat">
-          <small>Unpaid bills</small>
-          <strong>{pending}</strong>
-          <span>{bills.filter((b) => billStatus(b) === 'Overdue').length} overdue</span>
-        </div>
-        <div className="stat">
-          <small>Open repair requests</small>
-          <strong>{open.length}</strong>
-        </div>
+        <StatCard label="Property listings" value={properties.length} detail={`${properties.filter((property) => property.published).length} published`} icon="⌂" />
+        <StatCard label="Rooms" value={live.length} detail={`${availableBeds} beds available`} icon="▦" />
+        <StatCard label="Occupied beds" value={`${rate}%`} detail={`${filledBeds} of ${totalBeds} beds`} icon="♙" />
+        <StatCard label="Active tenants" value={tenants.filter((tenant) => tenant.active).length} detail="Current residents" icon="♧" />
+        <StatCard label={`Collected · ${monthLabel(thisMonth())}`} value={money(revenue)} detail="Confirmed this month" icon="₱" />
+        <StatCard label="Pending payments" value={pending} detail={`${bills.filter((b) => billStatus(b) === 'Overdue').length} overdue`} icon="◷" />
+        <StatCard label="Maintenance requests" value={open.length} detail="Need attention" icon="⚒" />
       </div>
 
       <h3 className="section-title">Rooms</h3>
@@ -138,9 +166,25 @@ function Overview({ goTo }) {
           {open.length > 0 && <button className="link" onClick={() => goTo('Maintenance')}>Open the repair board</button>}
         </section>
       </div>
+      <section className="management-section">
+        <div className="section-heading-row"><div><h2>Recent transactions</h2><p>Latest tenant payments and submissions.</p></div><button className="link" onClick={() => goTo('Transactions')}>View all transactions →</button></div>
+        {recentBills.length === 0 ? <Empty>No payment activity to show yet.</Empty> : (
+          <div className="table-wrap">
+            <table><thead><tr><th>Tenant</th><th>Billing period</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+              <tbody>{recentBills.map((bill) => (
+                <tr key={bill.id}><td><strong>{nameOf(bill.tenantId)}</strong></td><td>{monthLabel(bill.month)}</td><td>{money(billTotal(bill))}</td><td>{fmtDate(bill.paidAt || bill.submittedAt || bill.createdAt)}</td><td><Badge>{billStatus(bill)}</Badge></td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <FileView file={proof} title="Payment receipt" onClose={() => setProof(null)} />
     </>
   )
+}
+
+function StatCard({ label, value, detail, icon }) {
+  return <article className="stat"><span className="stat-icon" aria-hidden="true">{icon}</span><small>{label}</small><strong>{value}</strong><span>{detail}</span></article>
 }
 
 function RoomPlate({ room, stat, children }) {
@@ -345,6 +389,13 @@ function Tenants() {
   const [importError, setImportError] = useState(false)
   const list = store.tenants.filter((t) => showInactive || t.active)
   const roomOf = (t) => store.rooms.find((r) => r.id === t.roomId)
+  const paymentOf = (tenant) => {
+    const bills = store.bills.filter((bill) => bill.tenantId === tenant.id)
+    if (!bills.length) return 'No bills'
+    if (bills.some((bill) => billStatus(bill) === 'Overdue')) return 'Overdue'
+    if (bills.some((bill) => bill.status !== 'Paid')) return 'Pending'
+    return 'Paid'
+  }
 
   return (
     <>
@@ -363,13 +414,16 @@ function Tenants() {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Name</th><th>Room / bed</th><th>Contact</th><th>Lease ends</th><th>Status</th></tr>
+              <tr><th>Name</th><th>Room / bed</th><th>Move-in</th><th>Monthly rent</th><th>Payment</th><th>Contact</th><th>Lease ends</th><th>Status</th></tr>
             </thead>
             <tbody>
               {list.map((t) => (
                 <tr key={t.id} className="clickable" tabIndex={0} onClick={() => setOpenId(t.id)} onKeyDown={(e) => e.key === 'Enter' && setOpenId(t.id)}>
                   <td><strong>{t.name}</strong></td>
                   <td>{roomOf(t) ? `${roomOf(t).number} · Bed ${t.bed}` : <span className="muted">Not assigned</span>}</td>
+                  <td>{fmtDate(t.moveIn)}</td>
+                  <td>{roomOf(t) ? money(roomOf(t).rate) : '—'}</td>
+                  <td><Badge>{paymentOf(t)}</Badge></td>
                   <td>{t.phone}</td>
                   <td>{fmtDate(t.leaseEnd)}</td>
                   <td><Badge tone={t.active ? 'green' : 'grey'}>{t.active ? 'Active' : 'Moved out'}</Badge></td>
@@ -457,7 +511,8 @@ function TenantDetail({ id, onClose, onEdit }) {
   const [view, setView] = useState(null)
   if (!t) return null
   const room = store.rooms.find((r) => r.id === t.roomId)
-  const owed = store.bills.filter((b) => b.tenantId === t.id && b.status !== 'Paid').reduce((s, b) => s + billTotal(b), 0)
+  const tenantBills = store.bills.filter((b) => b.tenantId === t.id).sort((a, b) => b.month.localeCompare(a.month))
+  const owed = tenantBills.filter((b) => b.status !== 'Paid').reduce((s, b) => s + billTotal(b), 0)
 
   return (
     <Modal title={t.name} onClose={onClose} wide>
@@ -467,10 +522,20 @@ function TenantDetail({ id, onClose, onEdit }) {
         <div><dt>Email</dt><dd>{t.email}</dd></div>
         <div><dt>Emergency contact</dt><dd>{t.emergency} · {t.emergencyPhone}</dd></div>
         <div><dt>Moved in</dt><dd>{fmtDate(t.moveIn)}</dd></div>
+        <div><dt>Monthly rent</dt><dd>{room ? money(room.rate) : '—'}</dd></div>
         <div><dt>Lease ends</dt><dd>{fmtDate(t.leaseEnd)}</dd></div>
         <div><dt>Unpaid balance</dt><dd>{money(owed)}</dd></div>
         <div><dt>Status</dt><dd><Badge tone={t.active ? 'green' : 'grey'}>{t.active ? 'Active' : 'Moved out'}</Badge></dd></div>
       </dl>
+
+      <h4 className="sub">Payment history</h4>
+      {tenantBills.length === 0 ? <Empty>No payment history yet.</Empty> : (
+        <div className="table-wrap">
+          <table><thead><tr><th>Period</th><th>Amount</th><th>Payment date</th><th>Status</th></tr></thead>
+            <tbody>{tenantBills.map((bill) => <tr key={bill.id}><td>{monthLabel(bill.month)}</td><td>{money(billTotal(bill))}</td><td>{fmtDate(bill.paidAt || bill.submittedAt || bill.createdAt)}</td><td><Badge>{billStatus(bill)}</Badge></td></tr>)}</tbody>
+          </table>
+        </div>
+      )}
 
       <h4 className="sub">IDs and signed contracts</h4>
       {t.docs.length === 0 ? (
@@ -638,9 +703,10 @@ function Billing() {
 /* --------------------------------------------------------- Maintenance */
 
 function Maintenance() {
-  const { tickets, tenants, rooms, setTicketStatus } = useStore()
+  const { tickets, tenants, rooms, properties = [] } = useStore()
   const [photo, setPhoto] = useState(null)
-  const columns = ['Open', 'In Progress', 'Resolved']
+  const columns = ['Pending', 'In Progress', 'Resolved']
+  const statusOf = (ticket) => ticket.status === 'Open' ? 'Pending' : ticket.status
 
   return (
     <>
@@ -648,31 +714,57 @@ function Maintenance() {
       <div className="board">
         {columns.map((col) => (
           <section key={col}>
-            <h3 className="section-title">{col} <span className="muted">({tickets.filter((t) => t.status === col).length})</span></h3>
-            {tickets.filter((t) => t.status === col).map((t) => {
+            <h3 className="section-title">{col} <span className="muted">({tickets.filter((t) => statusOf(t) === col).length})</span></h3>
+            {tickets.filter((t) => statusOf(t) === col).map((t) => {
               const tenant = tenants.find((x) => x.id === t.tenantId)
-              const room = rooms.find((r) => r.id === tenant?.roomId)
-              return (
-                <article key={t.id} className="ticket">
-                  <header>
-                    <strong>{CATEGORY_ICON[t.category] || '🛠️'} {t.category}</strong>
-                    <small>{fmtDate(t.createdAt)}</small>
-                  </header>
-                  <p>{t.description}</p>
-                  <small className="muted">{tenant?.name || 'Unknown'}{room ? ` · Room ${room.number}` : ''}</small>
-                  <div className="row-actions">
-                    {t.photo && <button className="btn btn-sm" onClick={() => setPhoto(t.photo)}>View photo</button>}
-                    <select value={t.status} onChange={(e) => setTicketStatus(t.id, e.target.value)} aria-label="Ticket status">
-                      {columns.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                  </div>
-                </article>
-              )
+              const roomId = Object.hasOwn(t, 'roomId') ? t.roomId : tenant?.roomId
+              const room = rooms.find((r) => r.id === roomId)
+              const property = properties.find((item) => item.id === t.propertyId) ||
+                (!Object.hasOwn(t, 'propertyId') ? properties.find((item) =>
+                  item.id === tenant?.propertyId || (room && item.roomIds?.includes(room.id))) : null)
+              return <MaintenanceTicket key={t.id} ticket={t} tenant={tenant} room={room} property={property} columns={columns} onPhoto={setPhoto} />
             })}
           </section>
         ))}
       </div>
       <FileView file={photo} title="Reported issue" onClose={() => setPhoto(null)} />
     </>
+  )
+}
+
+function MaintenanceTicket({ ticket, tenant, room, property, columns, onPhoto }) {
+  const { setTicketStatus, respondToTicket } = useStore()
+  const [response, setResponse] = useState(ticket.response || '')
+  const [message, setMessage] = useState('')
+  const status = ticket.status === 'Open' ? 'Pending' : ticket.status
+  const saveResponse = async (event) => {
+    event.preventDefault()
+    const result = await respondToTicket(ticket.id, response)
+    setMessage(result.error || 'Response saved.')
+  }
+
+  return (
+    <article className="ticket">
+      <header><strong>{CATEGORY_ICON[ticket.category] || '🛠️'} {ticket.category}</strong><small>{fmtDate(ticket.createdAt)}</small></header>
+      <p>{ticket.description}</p>
+      <div className="ticket-report-details">
+        <p><strong>Tenant:</strong> {tenant?.name || 'Unknown tenant'}</p>
+        {(tenant?.email || tenant?.phone) && <small className="muted">{[tenant.email, tenant.phone].filter(Boolean).join(' · ')}</small>}
+        <p><strong>Property:</strong> {property?.name || 'General / No assigned property'}</p>
+        {ticket.propertyLocation && <p><strong>Property or location details:</strong> {ticket.propertyLocation}</p>}
+        {(ticket.specificLocation || room) && <p><strong>Room or specific location:</strong> {ticket.specificLocation || `Room ${room.number}`}</p>}
+      </div>
+      <div className="row-actions">
+        {ticket.photo && <button className="btn btn-sm" onClick={() => onPhoto(ticket.photo)}>View photo</button>}
+        <select value={status} onChange={(event) => setTicketStatus(ticket.id, event.target.value)} aria-label="Ticket status">
+          {columns.map((item) => <option key={item}>{item}</option>)}
+        </select>
+      </div>
+      <form className="stack ticket-response" onSubmit={saveResponse}>
+        <Field label="Response to tenant"><textarea rows="2" value={response} onChange={(event) => setResponse(event.target.value)} placeholder="Share an update or maintenance note." /></Field>
+        <button className="btn btn-sm">Save response</button>
+        {message && <small role="status">{message}</small>}
+      </form>
+    </article>
   )
 }

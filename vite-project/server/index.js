@@ -44,11 +44,11 @@ function parseCookie(request, name) {
   return pair ? pair.slice(name.length + 1) : ''
 }
 
-function setSessionCookie(response, token) {
+function setSessionCookie(response, token, maxAge = SESSION_DAYS * 86400) {
   const secure = isProduction ? '; Secure' : ''
   response.setHeader(
     'Set-Cookie',
-    `affinity_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86400}${secure}`,
+    `affinity_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`,
   )
 }
 
@@ -123,14 +123,15 @@ async function currentUser(request) {
   return rows[0] || null
 }
 
-async function createSession(response, userId, connection = pool) {
+async function createSession(response, userId, connection = pool, rememberMe = true) {
   const token = randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000)
+  const sessionDays = rememberMe ? SESSION_DAYS : 1
+  const expiresAt = new Date(Date.now() + sessionDays * 86400000)
   await connection.execute(
     'INSERT INTO app_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
     [tokenHash(token), userId, expiresAt],
   )
-  setSessionCookie(response, token)
+  setSessionCookie(response, token, sessionDays * 86400)
 }
 
 async function requireUser(request, _response, next) {
@@ -151,8 +152,8 @@ function validateAccount({ name, email, password }) {
   if (Buffer.byteLength(password, 'utf8') > 72) throw httpError(400, 'Choose a password no longer than 72 UTF-8 bytes.')
 }
 
-async function loginResponse(response, userId) {
-  await createSession(response, userId)
+async function loginResponse(response, userId, rememberMe) {
+  await createSession(response, userId, pool, rememberMe)
   const [rows] = await pool.execute(
     'SELECT id, role, tenant_id AS tenantId, name, email FROM app_users WHERE id = ?',
     [userId],
@@ -186,7 +187,24 @@ app.post('/api/auth/admin/register', asyncRoute(async (request, response) => {
       email: normalizeEmail(email),
     }
     const { workspace, version } = await readWorkspace(connection, true)
-    const nextWorkspace = { ...workspace, landlord }
+    const nextWorkspace = {
+      ...workspace,
+      landlord,
+      properties: workspace.properties?.length ? workspace.properties : [{
+        id: `p${randomUUID()}`,
+        name: propertyName.trim(),
+        address: '',
+        city: '',
+        description: '',
+        rules: '',
+        amenities: [],
+        images: [],
+        monthlyRate: 0,
+        roomIds: [],
+        published: false,
+        createdAt: new Date().toISOString().slice(0, 10),
+      }],
+    }
     await connection.execute(
       'INSERT INTO app_users (id, role, tenant_id, name, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)',
       [userId, 'admin', null, landlord.name, landlord.email, passwordHash],
@@ -254,7 +272,7 @@ app.post('/api/auth/tenant/register', asyncRoute(async (request, response) => {
 }))
 
 app.post('/api/auth/login', asyncRoute(async (request, response) => {
-  const { role, email, password } = request.body || {}
+  const { role, email, password, rememberMe } = request.body || {}
   if (!['admin', 'tenant'].includes(role)) throw httpError(400, 'Choose a valid account type.')
   const [rows] = await pool.execute(
     'SELECT id, password_hash FROM app_users WHERE role = ? AND email = ? LIMIT 1',
@@ -271,7 +289,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
       rows[0].password_hash,
     ])
   }
-  return response.json(await loginResponse(response, rows[0].id))
+  return response.json(await loginResponse(response, rows[0].id, rememberMe !== false))
 }))
 
 app.post('/api/auth/logout', requireUser, asyncRoute(async (request, response) => {
@@ -359,10 +377,72 @@ registerMutation('put', '/api/bills/:id/proof', 'billing.attachProof', (request)
   id: request.params.id,
   proof: request.body?.payload?.proof,
 }))
+registerMutation('put', '/api/bills/:id/payment', 'billing.submitPayment', (request) => ({
+  id: request.params.id,
+  method: request.body?.payload?.method,
+  reference: request.body?.payload?.reference,
+  proof: request.body?.payload?.proof,
+}))
 registerMutation('post', '/api/tickets', 'ticket.create')
 registerMutation('put', '/api/tickets/:id/status', 'ticket.setStatus', (request) => ({
   id: request.params.id,
   status: request.body?.payload?.status,
+}))
+registerMutation('put', '/api/tickets/:id/response', 'ticket.respond', (request) => ({
+  id: request.params.id,
+  response: request.body?.payload?.response,
+}))
+registerMutation('post', '/api/properties', 'property.create')
+registerMutation('put', '/api/properties/:id', 'property.update', (request) => ({
+  id: request.params.id,
+  change: request.body?.payload?.change,
+}))
+registerMutation('delete', '/api/properties/:id', 'property.delete', (request) => ({
+  id: request.params.id,
+}))
+registerMutation('post', '/api/properties/:id/inquiries', 'property.inquiry', (request) => ({
+  propertyId: request.params.id,
+  roomId: request.body?.payload?.roomId,
+  moveInDate: request.body?.payload?.moveInDate,
+  durationMonths: request.body?.payload?.durationMonths,
+  message: request.body?.payload?.message,
+}))
+registerMutation('put', '/api/bookings/:id', 'booking.update', (request) => ({
+  id: request.params.id,
+  status: request.body?.payload?.status,
+  response: request.body?.payload?.response,
+}))
+registerMutation('post', '/api/contracts', 'contract.create')
+registerMutation('put', '/api/contracts/:id', 'contract.update', (request) => ({
+  id: request.params.id,
+  change: request.body?.payload?.change,
+}))
+registerMutation('put', '/api/contracts/:id/send', 'contract.send', (request) => ({
+  id: request.params.id,
+  change: request.body?.payload?.change,
+}))
+registerMutation('put', '/api/contracts/:id/decision', 'contract.decide', (request) => ({
+  id: request.params.id,
+  decision: request.body?.payload?.decision,
+  signature: request.body?.payload?.signature,
+}))
+registerMutation('put', '/api/contracts/:id/status', 'contract.setStatus', (request) => ({
+  id: request.params.id,
+  status: request.body?.payload?.status,
+}))
+registerMutation('post', '/api/contracts/:id/extensions', 'extension.create', (request) => ({
+  contractId: request.params.id,
+  additionalDays: request.body?.payload?.additionalDays,
+  reason: request.body?.payload?.reason,
+}))
+registerMutation('put', '/api/extensions/:id/review', 'extension.review', (request) => ({
+  id: request.params.id,
+  status: request.body?.payload?.status,
+  additionalCost: request.body?.payload?.additionalCost,
+  notes: request.body?.payload?.notes,
+}))
+registerMutation('put', '/api/extensions/:id/cancel', 'extension.cancel', (request) => ({
+  id: request.params.id,
 }))
 
 try {

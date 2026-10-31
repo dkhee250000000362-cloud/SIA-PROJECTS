@@ -64,10 +64,57 @@ function mutationRequest(action) {
       return { method: 'PUT', path: `/bills/${id(payload.id)}/status`, payload: { status: payload.status } }
     case 'billing.attachProof':
       return { method: 'PUT', path: `/bills/${id(payload.id)}/proof`, payload: { proof: payload.proof } }
+    case 'billing.submitPayment':
+      return {
+        method: 'PUT',
+        path: `/bills/${id(payload.id)}/payment`,
+        payload: { method: payload.method, reference: payload.reference, proof: payload.proof },
+      }
     case 'ticket.create':
       return { method: 'POST', path: '/tickets', payload }
     case 'ticket.setStatus':
       return { method: 'PUT', path: `/tickets/${id(payload.id)}/status`, payload: { status: payload.status } }
+    case 'ticket.respond':
+      return { method: 'PUT', path: `/tickets/${id(payload.id)}/response`, payload: { response: payload.response } }
+    case 'property.create':
+      return { method: 'POST', path: '/properties', payload }
+    case 'property.update':
+      return { method: 'PUT', path: `/properties/${id(payload.id)}`, payload: { change: payload.change } }
+    case 'property.delete':
+      return { method: 'DELETE', path: `/properties/${id(payload.id)}`, payload: {} }
+    case 'property.inquiry':
+      return {
+        method: 'POST',
+        path: `/properties/${id(payload.propertyId)}/inquiries`,
+        payload: {
+          roomId: payload.roomId,
+          moveInDate: payload.moveInDate,
+          durationMonths: payload.durationMonths,
+          message: payload.message,
+        },
+      }
+    case 'booking.update':
+      return {
+        method: 'PUT',
+        path: `/bookings/${id(payload.id)}`,
+        payload: { status: payload.status, response: payload.response },
+      }
+    case 'contract.create':
+      return { method: 'POST', path: '/contracts', payload }
+    case 'contract.update':
+      return { method: 'PUT', path: `/contracts/${id(payload.id)}`, payload: { change: payload.change } }
+    case 'contract.send':
+      return { method: 'PUT', path: `/contracts/${id(payload.id)}/send`, payload: { change: payload.change } }
+    case 'contract.setStatus':
+      return { method: 'PUT', path: `/contracts/${id(payload.id)}/status`, payload: { status: payload.status } }
+    case 'contract.decide':
+      return { method: 'PUT', path: `/contracts/${id(payload.id)}/decision`, payload: { decision: payload.decision, signature: payload.signature } }
+    case 'extension.create':
+      return { method: 'POST', path: `/contracts/${id(payload.contractId)}/extensions`, payload: { additionalDays: payload.additionalDays, reason: payload.reason } }
+    case 'extension.review':
+      return { method: 'PUT', path: `/extensions/${id(payload.id)}/review`, payload: { status: payload.status, additionalCost: payload.additionalCost, notes: payload.notes } }
+    case 'extension.cancel':
+      return { method: 'PUT', path: `/extensions/${id(payload.id)}/cancel`, payload: {} }
     default:
       throw new Error(`Unsupported workspace action: ${action.type}`)
   }
@@ -77,7 +124,7 @@ export const harborApi = {
   getSession: () => request('/session'),
   registerAdmin: (payload) => request('/auth/admin/register', json('POST', payload)),
   registerTenant: (payload) => request('/auth/tenant/register', json('POST', payload)),
-  login: (role, email, password) => request('/auth/login', json('POST', { role, email, password })),
+  login: (role, email, password, rememberMe) => request('/auth/login', json('POST', { role, email, password, rememberMe })),
   logout: () => request('/auth/logout', json('POST', {})),
   mutate(version, action) {
     const mutation = mutationRequest(action)
